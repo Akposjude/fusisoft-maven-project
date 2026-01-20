@@ -19,7 +19,6 @@ if systemctl is-active --quiet firewalld; then
 fi
 
 # Check status
-sudo systemctl status httpd
 
 echo "Apache HTTP Server installed successfully!"
 echo "Access it via: http://$(hostname -I | awk '{print $1}')"
