@@ -1,0 +1,20 @@
+pipeline {
+	agent { label 'java-build-agent'}
+	stages {
+	  stage(1. Git checkout){
+	   steps {checkout scm}
+	  }
+	  stage(2. Build){
+	   steps {sh 'mvn clean package' }
+	  }
+	  stage(3.Test){
+	   steps {sh 'echo " test build artifacts "' }
+	}
+	  stage(4.Archive stage){
+	   steps {sh 'echo " archiving artifacts "' }
+  }
+    stage(5.Deploy stage){
+	   steps {sh 'echo "Deploying application"' }
+   }
+  }
+}
