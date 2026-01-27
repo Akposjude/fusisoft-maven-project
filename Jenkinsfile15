@@ -48,7 +48,7 @@ pipeline {
             -Dsonar.host.url="$SONAR_HOST_URL" \
             -Dsonar.login="$SONAR_TOKEN" \
             -Dsonar.projectKey=akpos-maven \
-            -Dsonar.projectName='fusisoft-maven' \
+            -Dsonar.projectName='akpos-maven' \
             -Dsonar.sources=. \
             -Dsonar.java.binaries=target/classes
         '''
