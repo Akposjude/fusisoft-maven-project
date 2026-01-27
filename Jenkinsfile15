@@ -1,5 +1,5 @@
 pipeline {
-  agent { label 'java-build-agent' }
+  agent { label 'java-cicd-agent' }
 
   tools {
     maven 'maven-3-9-9'
