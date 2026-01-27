@@ -1,0 +1,152 @@
+pipeline {
+  agent { label 'java-build-agent' }
+
+  tools {
+    maven 'maven-3-9-9'
+  }
+
+  parameters {
+    string(name: 'IMAGE_TAG', defaultValue: '3.0.0', description: 'Docker image tag (e.g. 1.0.0)')
+    booleanParam(name: 'RUN_TESTS', defaultValue: true, description: 'Run tests?')
+    booleanParam(name: 'DEPLOY', defaultValue: true, description: 'Run container on this agent?')
+  }
+
+  environment {
+    IMAGE_REPO    = "ndiforfusi/fusisoft-webapp"
+    NOTIFY_EMAIL  = "fusisoft@gmail.com"
+    DOCKER_CREDS  = "dockerhub-ndiforfusi"
+    IMAGE_TAG     = "${params.IMAGE_TAG}"   // expose param to shell
+  }
+
+  stages {
+    stage('1. Checkout') {
+      steps { checkout scm }
+    }
+
+    stage('2. Maven Build') {
+      steps {
+        script {
+          def mvnHome = tool(name: 'maven-3-9-9', type: 'hudson.tasks.Maven$MavenInstallation')
+          sh """
+            set -euo pipefail
+            ${mvnHome}/bin/mvn -B -f pom.xml clean package -DskipTests
+          """
+        }
+      }
+    }
+
+    stage('3. SonarQube Scan') {
+      when { expression { return !env.CHANGE_ID } }
+      environment {
+        SONAR_HOST_URL = credentials('SONAR_HOST_URL')
+        SONAR_TOKEN    = credentials('SONAR_TOKEN')
+      }
+      steps {
+        sh '''
+          set -e
+          mvn sonar:sonar \
+            -Dsonar.host.url="$SONAR_HOST_URL" \
+            -Dsonar.login="$SONAR_TOKEN" \
+            -Dsonar.projectKey=akpos-maven \
+            -Dsonar.projectName='fusisoft-maven' \
+            -Dsonar.sources=. \
+            -Dsonar.java.binaries=target/classes
+        '''
+      }
+    }
+
+    stage('4. Docker Login') {
+      steps {
+        withCredentials([
+          usernamePassword(
+            credentialsId: "${DOCKER_CREDS}",
+            usernameVariable: 'DH_USER',
+            passwordVariable: 'DH_TOKEN'
+          )
+        ]) {
+          sh '''
+            set -euo pipefail
+            echo "$DH_TOKEN" | docker login -u "$DH_USER" --password-stdin
+          '''
+        }
+      }
+    }
+
+    stage('5. Docker Build & Push') {
+      steps {
+        sh '''
+          set -euo pipefail
+          echo "Building image: ${IMAGE_REPO}:${IMAGE_TAG}"
+
+          docker build -t ${IMAGE_REPO}:${IMAGE_TAG} -t ${IMAGE_REPO}:latest .
+          docker push ${IMAGE_REPO}:${IMAGE_TAG}
+          docker push ${IMAGE_REPO}:latest
+        '''
+      }
+    }
+
+    stage('6. Container Deployment') {
+      when { expression { params.DEPLOY } }
+      steps {
+        sh '''
+          set -euo pipefail
+          echo "Deploying image: ${IMAGE_REPO}:${IMAGE_TAG}"
+
+          docker stop fusisoft-webapp 2>/dev/null || true
+          docker rm fusisoft-webapp 2>/dev/null || true
+
+          docker pull ${IMAGE_REPO}:${IMAGE_TAG}
+          docker run -d --restart unless-stopped \
+            --name fusisoft-webapp \
+            -p 8085:8080 \
+            ${IMAGE_REPO}:${IMAGE_TAG}
+
+          docker ps --filter "name=fusisoft-webapp"
+        '''
+      }
+    }
+  }
+
+  post {
+    success {
+      script {
+        try {
+          mail to: "${env.NOTIFY_EMAIL}",
+               subject: "✅ Jenkins SUCCESS: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+               body: """\
+Status: SUCCESS ✅
+Job: ${env.JOB_NAME}
+Build: #${env.BUILD_NUMBER}
+Docker Image: ${env.IMAGE_REPO}:${env.IMAGE_TAG}
+Build URL: ${env.BUILD_URL}
+"""
+        } catch (err) {
+          echo "Email notification skipped (SMTP issue or Gmail limit): ${err}"
+        }
+      }
+    }
+
+    failure {
+      script {
+        try {
+          mail to: "${env.NOTIFY_EMAIL}",
+               subject: "❌ Jenkins FAILED: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+               body: """\
+Status: FAILED ❌
+Job: ${env.JOB_NAME}
+Build: #${env.BUILD_NUMBER}
+Docker Image: ${env.IMAGE_REPO}:${env.IMAGE_TAG}
+Console: ${env.BUILD_URL}console
+"""
+        } catch (err) {
+          echo "Email notification skipped (SMTP issue or Gmail limit): ${err}"
+        }
+      }
+    }
+
+    always {
+      sh 'docker logout >/dev/null 2>&1 || true'
+      cleanWs()
+    }
+  }
+}
