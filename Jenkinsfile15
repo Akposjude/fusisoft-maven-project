@@ -14,7 +14,7 @@ pipeline {
   environment {
     IMAGE_REPO    = "ndiforfusi/fusisoft-webapp"
     NOTIFY_EMAIL  = "fusisoft@gmail.com"
-    DOCKER_CREDS  = "dockerhub-ndiforfusi"
+    DOCKER_CREDS  = "dockerhub-akposjude"
     IMAGE_TAG     = "${params.IMAGE_TAG}"   // expose param to shell
   }
 
